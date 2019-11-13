@@ -409,7 +409,7 @@ fn main() {
             Vector3::new(0.0, 0.0, 1.0).norm(),
             Color::new(1.0, 0.0, 0.0),
         ))
-        .add_light(SceneLight::new(Vector3::new(50.0, -50.0, 50.0)))
+        .add_light(SceneLight::new(Vector3::new(3.0, -3.0, 2.0)))
         .add_camera(
             Vector3::new(3.0, 3.0, 2.0),
             Vector3::new(0.0, 0.0, 0.0),
