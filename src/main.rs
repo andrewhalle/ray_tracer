@@ -1,6 +1,6 @@
 use image;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Vector3 {
     x: f64,
     y: f64,
@@ -10,15 +10,6 @@ struct Vector3 {
 impl Vector3 {
     fn new(x: f64, y: f64, z: f64) -> Vector3 {
         Vector3 { x, y, z }
-    }
-
-    fn norm(&self) -> Vector3 {
-        let norm = (self.x * self.x + self.y * self.y + self.z * self.z).sqrt();
-        Vector3 {
-            x: self.x / norm,
-            y: self.y / norm,
-            z: self.z / norm,
-        }
     }
 
     fn add(v1: Vector3, v2: Vector3) -> Vector3 {
@@ -47,6 +38,10 @@ impl Vector3 {
 
     fn dot(v1: Vector3, v2: Vector3) -> f64 {
         v1.x * v2.x + v1.y * v2.y + v1.z * v2.z
+    }
+
+    fn norm(self) -> Vector3 {
+        Vector3::scale(self, 1.0 / Vector3::length(self))
     }
 
     fn cross(v1: Vector3, v2: Vector3) -> Vector3 {
@@ -175,8 +170,6 @@ impl Scene {
             num_pixels_y,
         });
 
-        println!("{:?}", self.camera.as_ref().unwrap());
-
         self
     }
 
@@ -231,7 +224,9 @@ impl Scene {
             let hit_point = obj.intersect(ray);
             match hit_point {
                 Some((p, t)) => {
-                    if first_intersection.is_none() || t < first_intersection.unwrap().1 {
+                    if first_intersection.is_none()
+                        || (t > 0.0 && t < first_intersection.unwrap().1)
+                    {
                         first_intersection = Some((p, t, obj));
                     }
                 }
@@ -248,7 +243,9 @@ impl Scene {
         for light in self.lights.iter() {
             let shadow_ray = Ray::new(point, light.center);
             match self.shoot(shadow_ray) {
-                Some(_) => {}
+                Some(_) => {
+                    irradiance = Color::add(irradiance, Color::scale(obj.color, 0.2));
+                }
                 None => {
                     let mut shade = Vector3::dot(obj.normal_at(point), shadow_ray.direction());
                     if shade < 0.0 {
@@ -280,7 +277,7 @@ impl SceneObject {
         match self.kind {
             SceneObjectKind::Plane(center, normal) => {
                 let denom = Vector3::dot(ray.direction(), normal);
-                if denom.abs() < 1e-9 {
+                if denom > 0.0 {
                     return None;
                 }
 
@@ -303,8 +300,26 @@ impl SceneObject {
                     None
                 } else {
                     let d = disc.sqrt();
-                    let p = Vector3::add(center, Vector3::scale(ray.direction(), v - d));
-                    Some((p, Vector3::length(Vector3::subtract(p, center))))
+                    let d_pos = d - v;
+                    let d_neg = -(v + d);
+
+                    if d_neg <= 0.0 && d_pos <= 0.0 {
+                        None
+                    } else if d_neg <= 0.0 {
+                        let p = Vector3::add(ray.from, Vector3::scale(ray.direction(), d_pos));
+                        if Vector3::dot(self.normal_at(p), ray.direction()) > 0.0 {
+                            None
+                        } else {
+                            Some((p, d_pos))
+                        }
+                    } else {
+                        let p = Vector3::add(ray.from, Vector3::scale(ray.direction(), d_neg));
+                        if Vector3::dot(self.normal_at(p), ray.direction()) > 0.0 {
+                            None
+                        } else {
+                            Some((p, d_neg))
+                        }
+                    }
                 }
             }
         }
@@ -396,9 +411,9 @@ fn main() {
         ))
         .add_light(SceneLight::new(Vector3::new(50.0, -50.0, 50.0)))
         .add_camera(
-            Vector3::new(5.0, 5.0, 5.0),
+            Vector3::new(3.0, 3.0, 2.0),
             Vector3::new(0.0, 0.0, 0.0),
-            Vector3::new(-1.0, -1.0, 2.0).norm(),
+            Vector3::new(-1.0, -1.0, 3.0).norm(),
             1.0,
             2.0,
             1.5,
@@ -407,4 +422,39 @@ fn main() {
         );
 
     scene.trace_to("out.png");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Color, Ray, Sphere, Vector3};
+
+    #[test]
+    fn sphere_normal_at() {
+        let sphere = Sphere::new(Vector3::new(0.0, 0.0, 0.0), 1.0, Color::new(0.0, 0.0, 0.0));
+        assert_eq!(
+            sphere.normal_at(Vector3::new(0.0, 0.0, 1.0)),
+            Vector3::new(0.0, 0.0, 1.0)
+        );
+        assert_eq!(
+            sphere.normal_at(Vector3::new(1.0, 0.0, 0.0)),
+            Vector3::new(1.0, 0.0, 0.0)
+        );
+
+        let sphere = Sphere::new(Vector3::new(0.0, 0.0, 0.0), 2.3, Color::new(0.0, 0.0, 0.0));
+        assert_eq!(
+            sphere.normal_at(Vector3::new(0.0, 0.0, -2.3)),
+            Vector3::new(0.0, 0.0, -1.0)
+        );
+    }
+
+    #[test]
+    fn sphere_intersect() {
+        let sphere = Sphere::new(Vector3::new(0.0, 0.0, 0.0), 1.0, Color::new(0.0, 0.0, 0.0));
+
+        let ray = Ray::new(Vector3::new(0.0, 0.0, 10.0), Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(
+            sphere.intersect(ray),
+            Some((Vector3::new(0.0, 0.0, 1.0), 9.0))
+        );
+    }
 }
