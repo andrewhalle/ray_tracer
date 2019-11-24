@@ -199,7 +199,10 @@ impl Scene {
             panic!("you need to add a camera before you can trace");
         }
 
-        let mut imgbuf = image::ImageBuffer::new(640, 480);
+        let mut imgbuf = image::ImageBuffer::new(
+            self.camera.as_ref().unwrap().num_pixels_x,
+            self.camera.as_ref().unwrap().num_pixels_y,
+        );
         for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
             let Color { r, g, b } = self.trace_pixel(x, y);
             let r = color_f64_to_u8(r, self.d);
@@ -511,29 +514,22 @@ fn main() {
             },
         ))
         .add_object(Plane::new(
-            Vector3::new(0.0, 10.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0).norm(),
-            SceneObjectMaterial::PureDiffuse {
-                color: Color::new(0.1, 0.1, 0.1),
-            },
-        ))
-        .add_object(Plane::new(
             Vector3::new(0.0, 0.0, -5.0),
             Vector3::new(0.0, 0.0, 1.0).norm(),
             SceneObjectMaterial::PureDiffuse {
                 color: Color::new(0.3, 0.3, 0.3),
             },
         ))
-        .add_light(SceneLight::new(Vector3::new(10.0, 9.9, 0.0), 1000.0))
+        .add_light(SceneLight::new(Vector3::new(10.0, 10.0, 0.0), 1000.0))
         .add_camera(
             Vector3::new(0.0, 0.0, 5.0),
             Vector3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0).norm(),
-            1.0,
+            2.0,
             2.0,
             1.5,
-            640,
-            480,
+            1280,
+            960,
         );
 
     scene.trace_to("out.png");
