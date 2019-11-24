@@ -488,33 +488,47 @@ impl SceneCamera {
 }
 
 fn main() {
-    let scene = Scene::new(0.2, 5.0)
+    let scene = Scene::new(0.2, 10.0)
         .add_object(Sphere::new(
-            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(-1.1, 0.0, 0.0),
             1.0,
             SceneObjectMaterial::PureDiffuse {
-                color: Color::new(0.0, 1.0, 0.0),
+                color: Color::new(1.0, 0.5, 0.5),
+            },
+        ))
+        .add_object(Sphere::new(
+            Vector3::new(1.1, 0.0, 0.0),
+            1.0,
+            SceneObjectMaterial::PureSpecular {
+                color: Color::new(0.5, 0.1, 0.5),
             },
         ))
         .add_object(Plane::new(
-            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0).norm(),
+            SceneObjectMaterial::PureDiffuse {
+                color: Color::new(0.3, 0.3, 0.3),
+            },
+        ))
+        .add_object(Plane::new(
+            Vector3::new(0.0, 10.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0).norm(),
+            SceneObjectMaterial::PureDiffuse {
+                color: Color::new(0.1, 0.1, 0.1),
+            },
+        ))
+        .add_object(Plane::new(
+            Vector3::new(0.0, 0.0, -5.0),
             Vector3::new(0.0, 0.0, 1.0).norm(),
             SceneObjectMaterial::PureDiffuse {
-                color: Color::new(1.0, 0.0, 0.0),
+                color: Color::new(0.3, 0.3, 0.3),
             },
         ))
-        .add_object(Plane::new(
-            Vector3::new(0.0, -5.0, 0.0),
-            Vector3::new(1.0, 1.0, 0.0).norm(),
-            SceneObjectMaterial::PureDiffuse {
-                color: Color::new(0.5, 0.5, 0.0),
-            },
-        ))
-        .add_light(SceneLight::new(Vector3::new(3.0, -3.0, 2.0), 20.0))
+        .add_light(SceneLight::new(Vector3::new(10.0, 9.9, 0.0), 1000.0))
         .add_camera(
-            Vector3::new(0.0, 0.0, 10.0),
+            Vector3::new(0.0, 0.0, 5.0),
             Vector3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0).norm(),
+            Vector3::new(0.0, 1.0, 0.0).norm(),
             1.0,
             2.0,
             1.5,
