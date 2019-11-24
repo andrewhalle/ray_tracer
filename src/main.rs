@@ -272,11 +272,36 @@ impl Scene {
                 for light in self.lights.iter() {
                     let shadow_ray = Ray::new(point, light.center);
                     match self.shoot(shadow_ray) {
-                        Some(_) => {
-                            direct_illumination = Color::add(
-                                direct_illumination,
-                                Color::scale(color, self.ambient_coef),
-                            );
+                        Some((p, _, _)) => {
+                            let hit_distance = Vector3::length(Vector3::subtract(p, point));
+                            let light_distance =
+                                Vector3::length(Vector3::subtract(light.center, point));
+
+                            if (hit_distance < light_distance) {
+                                direct_illumination = Color::add(
+                                    direct_illumination,
+                                    Color::scale(color, self.ambient_coef),
+                                );
+                            } else {
+                                let mut shade =
+                                    Vector3::dot(obj.normal_at(point), shadow_ray.direction());
+                                if shade < 0.0 {
+                                    shade = 0.0;
+                                }
+
+                                let distance =
+                                    Vector3::length(Vector3::subtract(light.center, point));
+                                shade /= distance.powi(2);
+
+                                direct_illumination = Color::add(
+                                    direct_illumination,
+                                    Color::scale(
+                                        color,
+                                        self.ambient_coef
+                                            + ((1.0 - self.ambient_coef) * shade * light.intensity),
+                                    ),
+                                );
+                            }
                         }
                         None => {
                             let mut shade =
@@ -471,13 +496,6 @@ fn main() {
                 color: Color::new(0.0, 1.0, 0.0),
             },
         ))
-        .add_object(Sphere::new(
-            Vector3::new(1.3, -1.3, 0.7),
-            0.7,
-            SceneObjectMaterial::PureSpecular {
-                color: Color::new(1.0, 1.0, 1.0),
-            },
-        ))
         .add_object(Plane::new(
             Vector3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0).norm(),
@@ -492,18 +510,11 @@ fn main() {
                 color: Color::new(0.5, 0.5, 0.0),
             },
         ))
-        .add_object(Plane::new(
-            Vector3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0).norm(),
-            SceneObjectMaterial::PureDiffuse {
-                color: Color::new(1.0, 0.0, 0.0),
-            },
-        ))
         .add_light(SceneLight::new(Vector3::new(3.0, -3.0, 2.0), 20.0))
         .add_camera(
-            Vector3::new(3.0, 3.0, 2.0),
+            Vector3::new(0.0, 0.0, 10.0),
             Vector3::new(0.0, 0.0, 0.0),
-            Vector3::new(-1.0, -1.0, 3.0).norm(),
+            Vector3::new(1.0, 0.0, 0.0).norm(),
             1.0,
             2.0,
             1.5,
