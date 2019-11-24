@@ -1,5 +1,14 @@
 use image;
 
+// convert a floating point color channel to a RGB byte (with gamma correction)
+fn color_f64_to_u8(x: f64, d: f64) -> u8 {
+    let x1: f64 = (0.0 as f64).max(x * d);
+    let x2: f64 = (1.0 as f64).min(x1);
+    let x3: f64 = x2.powf(1.0 / 2.2);
+
+    (x3 * 255.0) as u8
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Vector3 {
     x: f64,
@@ -92,6 +101,14 @@ impl Color {
             b: c.b * factor,
         }
     }
+
+    fn times(c1: Color, c2: Color) -> Color {
+        Color {
+            r: c1.r * c2.r,
+            g: c1.g * c2.g,
+            b: c1.b * c2.b,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -114,14 +131,18 @@ struct Scene {
     objects: Vec<SceneObject>,
     lights: Vec<SceneLight>,
     camera: Option<SceneCamera>,
+    d: f64,
+    ambient_coef: f64,
 }
 
 impl Scene {
-    fn new() -> Scene {
+    fn new(ambient_coef: f64, d: f64) -> Scene {
         Scene {
             objects: Vec::new(),
             lights: Vec::new(),
             camera: None,
+            d,
+            ambient_coef,
         }
     }
 
@@ -181,9 +202,9 @@ impl Scene {
         let mut imgbuf = image::ImageBuffer::new(640, 480);
         for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
             let Color { r, g, b } = self.trace_pixel(x, y);
-            let r = (r * 255.0) as u8;
-            let g = (g * 255.0) as u8;
-            let b = (b * 255.0) as u8;
+            let r = color_f64_to_u8(r, self.d);
+            let g = color_f64_to_u8(g, self.d);
+            let b = color_f64_to_u8(b, self.d);
 
             *pixel = image::Rgb([r, g, b]);
         }
@@ -208,7 +229,13 @@ impl Scene {
     fn trace_ray(&self, ray: Ray) -> Color {
         let intersection = self.shoot(ray);
         match intersection {
-            Some((p, _, obj)) => self.irradiance_at_point(p, obj),
+            Some((p, _, obj)) => {
+                let distance = Vector3::length(Vector3::subtract(p, ray.from));
+                Color::scale(
+                    self.irradiance_at_point(ray, p, obj),
+                    1.0 / distance.powi(2),
+                )
+            }
             None => Color {
                 r: 0.0,
                 g: 0.0,
@@ -237,34 +264,71 @@ impl Scene {
         first_intersection
     }
 
-    fn irradiance_at_point(&self, point: Vector3, obj: &SceneObject) -> Color {
-        let mut irradiance = Color::black();
+    fn irradiance_at_point(&self, ray: Ray, point: Vector3, obj: &SceneObject) -> Color {
+        match obj.material {
+            SceneObjectMaterial::PureDiffuse { color } => {
+                let mut direct_illumination = Color::black();
 
-        for light in self.lights.iter() {
-            let shadow_ray = Ray::new(point, light.center);
-            match self.shoot(shadow_ray) {
-                Some(_) => {
-                    irradiance = Color::add(irradiance, Color::scale(obj.color, 0.2));
-                }
-                None => {
-                    let mut shade = Vector3::dot(obj.normal_at(point), shadow_ray.direction());
-                    if shade < 0.0 {
-                        shade = 0.0;
+                for light in self.lights.iter() {
+                    let shadow_ray = Ray::new(point, light.center);
+                    match self.shoot(shadow_ray) {
+                        Some(_) => {
+                            direct_illumination = Color::add(
+                                direct_illumination,
+                                Color::scale(color, self.ambient_coef),
+                            );
+                        }
+                        None => {
+                            let mut shade =
+                                Vector3::dot(obj.normal_at(point), shadow_ray.direction());
+                            if shade < 0.0 {
+                                shade = 0.0;
+                            }
+
+                            let distance = Vector3::length(Vector3::subtract(light.center, point));
+                            shade /= distance.powi(2);
+
+                            direct_illumination = Color::add(
+                                direct_illumination,
+                                Color::scale(
+                                    color,
+                                    self.ambient_coef
+                                        + ((1.0 - self.ambient_coef) * shade * light.intensity),
+                                ),
+                            );
+                        }
                     }
-
-                    irradiance =
-                        Color::add(irradiance, Color::scale(obj.color, 0.2 + (0.8 * shade)));
                 }
+
+                direct_illumination
+            }
+            SceneObjectMaterial::PureSpecular { color } => {
+                // compute reflection ray
+                let reflected_direction = Vector3::subtract(
+                    ray.direction(),
+                    Vector3::scale(
+                        obj.normal_at(point),
+                        2.0 * Vector3::dot(ray.direction(), obj.normal_at(point)),
+                    ),
+                );
+
+                Color::times(
+                    color,
+                    self.trace_ray(Ray::new(point, Vector3::add(point, reflected_direction))),
+                )
             }
         }
-
-        irradiance
     }
 }
 
 struct SceneObject {
-    color: Color,
+    material: SceneObjectMaterial,
     kind: SceneObjectKind,
+}
+
+enum SceneObjectMaterial {
+    PureDiffuse { color: Color },
+    PureSpecular { color: Color },
 }
 
 enum SceneObjectKind {
@@ -335,9 +399,9 @@ impl SceneObject {
 
 struct Plane;
 impl Plane {
-    fn new(center: Vector3, normal: Vector3, color: Color) -> SceneObject {
+    fn new(center: Vector3, normal: Vector3, material: SceneObjectMaterial) -> SceneObject {
         SceneObject {
-            color,
+            material,
             kind: SceneObjectKind::Plane(center, normal),
         }
     }
@@ -345,9 +409,9 @@ impl Plane {
 
 struct Sphere;
 impl Sphere {
-    fn new(center: Vector3, radius: f64, color: Color) -> SceneObject {
+    fn new(center: Vector3, radius: f64, material: SceneObjectMaterial) -> SceneObject {
         SceneObject {
-            color,
+            material,
             kind: SceneObjectKind::Sphere(center, radius),
         }
     }
@@ -355,11 +419,12 @@ impl Sphere {
 
 struct SceneLight {
     center: Vector3,
+    intensity: f64,
 }
 
 impl SceneLight {
-    fn new(center: Vector3) -> SceneLight {
-        SceneLight { center }
+    fn new(center: Vector3, intensity: f64) -> SceneLight {
+        SceneLight { center, intensity }
     }
 }
 
@@ -398,18 +463,43 @@ impl SceneCamera {
 }
 
 fn main() {
-    let scene = Scene::new()
+    let scene = Scene::new(0.2, 5.0)
         .add_object(Sphere::new(
             Vector3::new(0.0, 0.0, 1.0),
             1.0,
-            Color::new(0.0, 1.0, 0.0),
+            SceneObjectMaterial::PureDiffuse {
+                color: Color::new(0.0, 1.0, 0.0),
+            },
+        ))
+        .add_object(Sphere::new(
+            Vector3::new(1.3, -1.3, 0.7),
+            0.7,
+            SceneObjectMaterial::PureSpecular {
+                color: Color::new(1.0, 1.0, 1.0),
+            },
         ))
         .add_object(Plane::new(
             Vector3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0).norm(),
-            Color::new(1.0, 0.0, 0.0),
+            SceneObjectMaterial::PureDiffuse {
+                color: Color::new(1.0, 0.0, 0.0),
+            },
         ))
-        .add_light(SceneLight::new(Vector3::new(3.0, -3.0, 2.0)))
+        .add_object(Plane::new(
+            Vector3::new(0.0, -5.0, 0.0),
+            Vector3::new(1.0, 1.0, 0.0).norm(),
+            SceneObjectMaterial::PureDiffuse {
+                color: Color::new(0.5, 0.5, 0.0),
+            },
+        ))
+        .add_object(Plane::new(
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0).norm(),
+            SceneObjectMaterial::PureDiffuse {
+                color: Color::new(1.0, 0.0, 0.0),
+            },
+        ))
+        .add_light(SceneLight::new(Vector3::new(3.0, -3.0, 2.0), 20.0))
         .add_camera(
             Vector3::new(3.0, 3.0, 2.0),
             Vector3::new(0.0, 0.0, 0.0),
